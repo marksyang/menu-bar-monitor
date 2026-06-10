@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct MenuBarView: View {
+    let monitorService: SystemMonitorService
+    let preferences: UserPreference
     @Environment(\.openWindow) private var openWindow
-    @State private var preferences = UserPreference()
-    @State private var metrics = SystemMetrics()
-
+    
     var body: some View {
         Text(getDisplayText())
             .font(.system(size: 13, weight: .medium))
@@ -13,24 +13,28 @@ struct MenuBarView: View {
                 openWindow(id: "mainPanel")
             }
     }
+    
+    // Observe metrics directly from the service
+    private var metrics: SystemMetrics {
+        monitorService.metrics
+    }
 
     private var isAlertState: Bool {
         metrics.thermalPressure == "Critical" || metrics.memoryPressure == "Critical"
     }
 
     private func getDisplayText() -> String {
+        let m = metrics
         switch preferences.currentMode {
         case .compact:
-            // FR-015: Compact Mode
-            return "CPU\(Int(metrics.cpuUsage)} GPU\(Int(metrics.gpuUsage)} MEM\(Int(metrics.memoryUsage)}"
+            return "CPU \(Int(m.cpuUsage))% GPU \(Int(m.gpuUsage))% MEM \(Int(m.memoryUsage))%"
         case .standard:
-            // FR-015: Standard Mode
-            return "CPU \(Int(metrics.cpuUsage)}% | MEM \(Int(metrics.memoryUsage)}% | \(Int(metrics.temperature)}°C"
+//            return "CPU \(Int(m.cpuUsage))% | MEM \(Int(m.memoryUsage))% | \(Int(m.cpuTemperature))°C"
+            return "\(Int(m.cpuTemperature))°C   "
+//            return "\(String(format: "%.1f°C", monitorService.metrics.cpuTemperature))"
         case .aiMode:
-            // FR-015: AI Mode (Matches User Story 2 example)
-            return "CPU\(Int(metrics.cpuUsage)} GPU\(Int(metrics.gpuUsage)} MEM\(Int(metrics.memoryUsage)} MP:\(metrics.memoryPressure.prefix(1)) SW\(Int(metrics.swapUsage)} TH:\(metrics.thermalPressure.prefix(1)) F\(metrics.fanRpm)"
+            return "CPU \(Int(m.cpuUsage))% GPU \(Int(m.gpuUsage))% MEM \(Int(m.memoryUsage))% MP:\(m.memoryPressure.prefix(1)) SW \(Int(m.swapUsage))MB TH:\(m.thermalPressure.prefix(1)) F \(m.fanRpm)"
         case .iconMode:
-            // FR-015: Icon Mode
             return "📊"
         }
     }

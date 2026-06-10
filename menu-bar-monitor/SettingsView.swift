@@ -5,18 +5,26 @@ struct SettingsView: View {
     
     var body: some View {
         Form {
-            Section("Display") {
+            Section("Display Configuration") {
                 Picker("Display Mode", selection: $preferences.currentMode) {
                     ForEach(DisplayMode.allCases) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
+                .onChange(of: preferences.currentMode) {
+                    preferences.save()
+                }
+            }
+            
+            Section("Startup") {
+                Toggle("Launch at Login", isOn: $preferences.startupLaunch)
+                    .onChange(of: preferences.startupLaunch) {
+                        preferences.save()
+                    }
             }
         }
-        .onDisappear {
-            preferences.save()
-        }
-        .task {
+        .padding()
+        .onAppear {
             preferences.load()
         }
     }

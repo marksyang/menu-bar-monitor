@@ -1,7 +1,7 @@
 import Foundation
 
 struct AlertCondition: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()
     var metric: MonitorMetric
     var threshold: Double
     var action: AlertAction
