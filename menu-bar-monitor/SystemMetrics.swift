@@ -10,7 +10,8 @@ struct SystemMetrics {
     var cpuTemperature: Double = 0.0
     var gpuTemperature: Double = 0.0
     var thermalPressure: String = "Nominal"
-    var fanRpm: Int = -1 // -1 indicates N/A or error
+    var fan0Rpm: Int = -1 // -1 indicates N/A or error
+    var fan1Rpm: Int = -1 // -1 indicates N/A or error
     var diskUsage: Double = 0.0
     var cpuPower: Double = 0.0
     var gpuPower: Double = 0.0

@@ -33,7 +33,7 @@ struct MenuBarView: View {
             return "\(Int(m.cpuTemperature))°C   "
 //            return "\(String(format: "%.1f°C", monitorService.metrics.cpuTemperature))"
         case .aiMode:
-            return "CPU \(Int(m.cpuUsage))% GPU \(Int(m.gpuUsage))% MEM \(Int(m.memoryUsage))% MP:\(m.memoryPressure.prefix(1)) SW \(Int(m.swapUsage))MB TH:\(m.thermalPressure.prefix(1)) F \(m.fanRpm)"
+            return "CPU \(Int(m.cpuUsage))% GPU \(Int(m.gpuUsage))% MEM \(Int(m.memoryUsage))% MP:\(m.memoryPressure.prefix(1)) SW \(Int(m.swapUsage))MB TH:\(m.thermalPressure.prefix(1)) F0:\(m.fan0Rpm) F1:\(m.fan1Rpm)"
         case .iconMode:
             return "📊"
         }

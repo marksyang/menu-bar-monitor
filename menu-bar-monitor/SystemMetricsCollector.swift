@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import IOKit
+import CoreFoundation
 
 /// A pure Swift wrapper around Darwin C functions for system telemetry.
 /// This avoids the need for a separate Objective-C bridging header.
@@ -15,33 +16,6 @@ struct SystemMetricsCollector {
                 host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, intPointer, &count)
             }
         }
-//        guard let smc = SMCReader() else {
-//            print("SMCReader init failed — open() returned false")
-//            print("IOServiceGetMatchingServices result needs checking")
-//            return 0.0
-//        }
-//        // 在 debugRead 確認後，批次掃描常見溫度 key
-//        let tempKeys = [
-//            "TB0T", "TB1T", "TB2T", "TB3T",  // Battery
-//            "TW0P",                            // WiFi
-//            "Tm0P", "Tm1P",                    // Memory
-//            "THSP",                            // Thunderbolt
-//            "TN0D", "TN0P",                    // Northbridge
-//            "Te0T",                            // eGPU
-//            "Tp01", "Tp05", "Tp0D", "Tp0b",   // Apple Silicon CPU
-//            "Tp0j", "Tp0r", "Tp0X", "Tp0Z",
-//            "Tg0f", "Tg0j",                    // Apple Silicon GPU
-//            "FNum", "F0Ac", "F0Mn", "F0Mx", "F0Tg", "F0Md",  //Fan
-//            "PFDC", "PC3S", "PC4S", "CGPA", "PCPC", "PG0R", "PSTR", // CPU Power
-//            "PG0R", "PG0W", "PGTR", "PGPC", "PFDG", "PFGC", "PFCC", // GPU Power
-//        ]
-//
-//        for k in tempKeys {
-//            let result = smc.debugRead(keyStr: k)
-//            if !result.contains("0B]") && !result.contains("read failed") {
-//                print(result)  // 只印出存在的
-//            }
-//        }
         
         guard status == KERN_SUCCESS else { return 0.0 }
         let user = cpuInfo.cpu_ticks.0
@@ -53,6 +27,86 @@ struct SystemMetricsCollector {
         guard total > 0 else { return 0.0 }
         
         return (1.0 - (Double(idle) / Double(total))) * 100.0
+    }
+    
+    // MARK: - GPU Usage
+    static func fetchGPUUsage() -> Double {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &iterator) == KERN_SUCCESS else { return 0.0 }
+        defer { IOObjectRelease(iterator) }
+
+        let service = IOIteratorNext(iterator)
+        guard service != 0 else { return 0.0 }
+        defer { IOObjectRelease(service) }
+
+        var props: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+              let dict = props?.takeRetainedValue() as? [String: Any],
+              let stats = dict["PerformanceStatistics"] as? [String: Any],
+              let usage = stats["Device Utilization %"] as? Int else { return 0.0 }
+
+        return Double(usage)  // 已經是 0-100，不需要換算
+    }
+    
+    static func debugGPUStats() {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &iterator) == KERN_SUCCESS else {
+            print("IOAccelerator not found")
+            return
+        }
+        defer { IOObjectRelease(iterator) }
+
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            defer {
+                IOObjectRelease(service)
+                service = IOIteratorNext(iterator)
+            }
+            var props: Unmanaged<CFMutableDictionary>?
+            guard IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+                  let dict = props?.takeRetainedValue() as? [String: Any] else { continue }
+
+            print("=== IOAccelerator Entry ===")
+            // 印出所有頂層 key
+            dict.keys.forEach { print("  TOP: \($0)") }
+            
+            // 印出 PerformanceStatistics 裡的所有 key
+            if let stats = dict["PerformanceStatistics"] as? [String: Any] {
+                print("  --- PerformanceStatistics ---")
+                stats.forEach { print("    \($0.key): \($0.value)") }
+            }
+        }
+    }
+    
+    static func debugSMCStats() {
+        guard let smc = SMCReader() else {
+            print("SMCReader init failed — open() returned false")
+            print("IOServiceGetMatchingServices result needs checking")
+            return
+        }
+        // 在 debugRead 確認後，批次掃描常見溫度 key
+        let tempKeys = [
+            "TB0T", "TB1T", "TB2T", "TB3T",  // Battery
+            "TW0P",                            // WiFi
+            "Tm0P", "Tm1P",                    // Memory
+            "THSP",                            // Thunderbolt
+            "TN0D", "TN0P",                    // Northbridge
+            "Te0T",                            // eGPU
+            "Tp01", "Tp05", "Tp0D", "Tp0b",   // Apple Silicon CPU
+            "Tp0j", "Tp0r", "Tp0X", "Tp0Z",
+            "Tg0f", "Tg0j",                    // Apple Silicon GPU
+            "FNum", "F0Ac", "F0Mn", "F0Mx", "F0Tg", "F0Md",  //Fan
+            "PFDC", "PC3S", "PC4S", "CGPA", "PCPC", "PG0R", "PHPC",  // CPU Power
+            "PG0R", "PG0W", "PGTR", "PGPC", "PFDG", "PFGC", "PFCC", // GPU Power
+            "PSTR", "PDTR", "PD0R", "PGTR", // System Power
+        ]
+
+        for k in tempKeys {
+            let result = smc.debugRead(keyStr: k)
+            if !result.contains("0B]") && !result.contains("read failed") {
+                print(result)  // 只印出存在的
+            }
+        }
     }
     
     // MARK: - Memory Usage
@@ -75,10 +129,9 @@ struct SystemMetricsCollector {
         let pageSize = vm_page_size
         let totalPages = Double(totalMem) / Double(pageSize)
         
-        // macOS: 已使用記憶體包含 Active, Inactive, Wired 與 Compressor 頁框
-        let usedPages = Double(vmStats.active_count) + 
-                        Double(vmStats.inactive_count) + 
-                        Double(vmStats.wire_count) + 
+        // macOS: 已使用記憶體包含 Active, Wired 與 Compressor 頁框
+        let usedPages = Double(vmStats.active_count) +
+                        Double(vmStats.wire_count) +
                         Double(vmStats.compressor_page_count)
         
         let usedPercent = (usedPages / totalPages) * 100.0
@@ -88,11 +141,11 @@ struct SystemMetricsCollector {
         sysctlbyname("vm.swapusage", &swapUsage, &swapUsageSize, nil, 0)
         let swapUsed = Double(swapUsage.used) / (1024.0 * 1024.0)
         
-        let freePages = Double(vmStats.free_count)
+        let availablePages = Double(vmStats.free_count) + Double(vmStats.inactive_count)
         let pressure: String
-        if freePages < totalPages * 0.02 {
+        if availablePages < totalPages * 0.05 {
             pressure = "Critical"
-        } else if freePages < totalPages * 0.05 {
+        } else if availablePages < totalPages * 0.10 {
             pressure = "Warning"
         } else {
             pressure = "Normal"
@@ -105,11 +158,11 @@ struct SystemMetricsCollector {
     /// Reads fan RPM via IOKit. Works reliably on Intel Macs.
     /// On Apple Silicon, public APIs do not expose fan RPM directly without private frameworks.
     /// Returns -1 if fans are unavailable (e.g., MacBook Air) or unreadable.
-    static func fetchFanRPM() -> Int {
-        guard let smc = SMCReader() else { return -1 }
+    static func fetchFanRPM() -> [Int] {
+        guard let smc = SMCReader() else { return [-1, -1] }
         let count = smc.fanCount()
-        guard count > 0 else { return 0 }  // M 系列靜音模式下風扇不轉
-        return smc.fanRPM(index: 0)
+        guard count > 0 else { return [0, 0] }  // M 系列靜音模式下風扇不轉
+        return (0..<count).map { smc.fanRPM(index: $0) }
     }
     
     // MARK: - CPU Temperature
@@ -140,8 +193,8 @@ struct SystemMetricsCollector {
         return smc.readGPUPower()
     }
     
-    // MARK: - CPU Power
-    /// Reads CPU power draw via SMC. Public API support varies by hardware.
+    // MARK: - System Power
+    /// Reads total system power draw via SMC. Public API support varies by hardware.
     static func fetchSystemPower() -> Double {
         guard let smc = SMCReader() else { return 0.0 }
         return smc.readSystemPower()

@@ -15,10 +15,12 @@ struct menu_bar_monitorApp: App {
         
         Window("MonitorBar Detail", id: "mainPanel") {
             MainPanelView()
+                .positionTopRight()
         }
-        .windowResizability(.contentSize)
         .restorationBehavior(.disabled)
-        
+        .windowLevel(.floating)
+        .windowResizability(.contentSize)
+   
         Settings {
             SettingsView()
         }
@@ -35,27 +37,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         userPreferences.load()
         
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        guard let statusItem = statusItem else { return }
+        guard let statusItem = statusItem,
+                  let button = statusItem.button else { return }
+            
+        let hostingController = NSHostingController(
+            rootView: MenuBarView(monitorService: monitorService, preferences: userPreferences)
+        )
         
-        let hostingController = NSHostingController<MenuBarView>(rootView: MenuBarView(monitorService: monitorService, preferences: userPreferences))
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         
-        if #available(macOS 13.0, *) {
-            hostingController.sizingOptions = .preferredContentSize
-            // 強制設定尺寸，避免狀態列視圖高度/寬度塌陷為 0
-            hostingController.view.frame.size = NSSize(width: 220, height: 22)
-            statusItem.view = hostingController.view
-        } else {
-            if let button = statusItem.button {
-                hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-                button.addSubview(hostingController.view)
-                NSLayoutConstraint.activate([
-                    hostingController.view.topAnchor.constraint(equalTo: button.topAnchor),
-                    hostingController.view.bottomAnchor.constraint(equalTo: button.bottomAnchor),
-                    hostingController.view.leadingAnchor.constraint(equalTo: button.leadingAnchor),
-                    hostingController.view.trailingAnchor.constraint(equalTo: button.trailingAnchor)
-                ])
-            }
-        }
+        button.addSubview(hostingController.view)
+        button.frame.size = NSSize(width: 220, height: 22)
+        
+        NSLayoutConstraint.activate([
+            hostingController.view.topAnchor.constraint(equalTo: button.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+            hostingController.view.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+        ])
         
         monitorService.startMonitoring()
     }
@@ -64,3 +63,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         monitorService.stopMonitoring()
     }
 }
+
+// MARK: - 視窗位置調整 Modifier
+extension View {
+    func positionTopRight() -> some View {
+        self.modifier(TopRightWindowModifier())
+    }
+}
+
+private struct TopRightWindowModifier: ViewModifier {
+    @State private var isReadyToShow = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isReadyToShow ? 1 : 0)
+            .allowsHitTesting(isReadyToShow)
+            .onAppear {
+                guard let window = NSApp.windows.first(where: { $0.title == "MonitorBar Detail" }) else {
+                    isReadyToShow = true
+                    return
+                }
+                
+                // 先移到螢幕外
+                window.setFrameOrigin(NSPoint(x: -9999, y: -9999))
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    guard let screen = NSScreen.main else {
+                        isReadyToShow = true
+                        return
+                    }
+                    let targetX = screen.visibleFrame.maxX - window.frame.width
+                    let targetY = screen.visibleFrame.maxY - window.frame.height
+                    window.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+                    isReadyToShow = true
+                }
+            }
+    }
+}
+
+
+

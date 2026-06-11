@@ -22,7 +22,8 @@ struct MainPanelView: View {
             MetricRow(name: "CPU Temperature", value: String(format: "%.1f°C", monitorService.metrics.cpuTemperature))
             MetricRow(name: "GPU Temperature", value: String(format: "%.1f°C", monitorService.metrics.gpuTemperature))
             MetricRow(name: "System Power", value: String(format: "%.1fW", monitorService.metrics.systemPower))
-            MetricRow(name: "Fan RPM", value: monitorService.metrics.fanRpm == -1 ? "N/A" : "\(monitorService.metrics.fanRpm) RPM")
+            MetricRow(name: "Fan 0 RPM", value: monitorService.metrics.fan0Rpm == -1 ? "N/A" : "\(monitorService.metrics.fan0Rpm) RPM")
+            MetricRow(name: "Fan 1 RPM", value: monitorService.metrics.fan1Rpm == -1 ? "N/A" : "\(monitorService.metrics.fan0Rpm) RPM")
             
             Divider()
             
